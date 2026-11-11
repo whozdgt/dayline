@@ -39,7 +39,9 @@
 *,*::before,*::after{box-sizing:border-box}
 *{scrollbar-width:thin;scrollbar-color:var(--raised) transparent}
 html{height:100%}
-body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:400 1rem/1.4 var(--f);overflow:hidden}
+body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:400 1rem/1.4 var(--f);overflow:hidden;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+input,textarea{-webkit-user-select:text;user-select:text}
 button,input,select,textarea{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer;padding:0}
 h1,h2,h3,p{margin:0}
@@ -56,12 +58,15 @@ h1,h2,h3,p{margin:0}
 
 .head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem;min-height:2.75rem}
 .head h1{font:600 1.7rem/1.15 var(--fd);letter-spacing:-.01em;text-wrap:balance}
+.head h1 .sub{font:400 1rem var(--f);letter-spacing:0;margin-left:.45rem}
 .sub{color:var(--mute);font-variant-numeric:tabular-nums}
 .ib{width:2.75rem;height:2.75rem;border-radius:calc(1.375rem*var(--rk));display:grid;place-items:center;flex:none}
 .ib:hover,.nv:hover{background:var(--raised)}
 .btn{min-height:2.75rem;padding:0 1rem;border-radius:calc(.75rem*var(--rk));background:var(--raised);font-weight:500;font-size:.9rem;display:inline-flex;align-items:center;justify-content:center;gap:.5rem;white-space:nowrap}
 .btn.primary{background:var(--accent);color:var(--on-accent);font-weight:600}
 .btn.danger{color:var(--now)}
+.btn,.chip,.fab,.ib,.wd,.nv{transition:transform .12s ease-out,background-color .15s}
+.btn:active,.chip:active,.fab:active,.ib:active,.wd:active{transform:scale(.95)}
 .btn:disabled{opacity:.5;cursor:default}
 .in{width:100%;min-height:2.75rem;padding:.5rem .9rem;border-radius:calc(.75rem*var(--rk));border:1px solid var(--line);background:var(--bg);min-width:0}
 select.in{width:auto;padding-right:.5rem}
@@ -94,7 +99,7 @@ textarea.in{resize:vertical}
 .mo-t.is-now{color:var(--accent-text)}
 
 /* to-dos */
-.chips{display:flex;gap:.5rem;overflow-x:auto;padding-bottom:.75rem;scrollbar-width:none;flex:none}
+.chips{display:flex;gap:.5rem;overflow-x:auto;scrollbar-width:none;flex:none;margin:0 calc(-1*var(--gr)) 0 calc(-1*var(--gl));padding:0 var(--gr) .75rem var(--gl)}
 .chip{flex:none;min-height:2.75rem;padding:0 1rem;border-radius:calc(.875rem*var(--rk));background:var(--surface);color:var(--fg2);font-size:.9rem;font-weight:500}
 .chip[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);font-weight:600}
 .quick{display:flex;gap:.5rem;margin-bottom:.9rem}
@@ -158,9 +163,20 @@ textarea.in{resize:vertical}
 .fab{position:relative;width:3.25rem;height:3.25rem;border-radius:calc(1.625rem*var(--rk));background:var(--raised);display:grid;place-items:center;flex:none}
 .fab.add{background:var(--accent);color:var(--on-accent)}
 .fab select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
-.pill{flex:1;display:flex;padding:.25rem;border-radius:calc(1.75rem*var(--rk));background:var(--raised)}
-.pill button{flex:1;min-height:2.75rem;border-radius:calc(1.4rem*var(--rk));font-weight:500;color:var(--fg2)}
-.pill button[aria-current="true"]{background:var(--sel);color:var(--fg);font-weight:600}
+.pill{flex:1;display:flex;padding:.25rem;border-radius:calc(1.75rem*var(--rk));background:var(--raised);position:relative;overflow:hidden}
+.pill button{flex:1;min-height:2.75rem;border-radius:calc(1.4rem*var(--rk));font-weight:500;color:var(--fg2);position:relative;z-index:1;transition:color .3s}
+.pill button[aria-current="true"]{color:var(--fg);font-weight:600}
+/* The leading edge runs ahead and the trailing edge catches up late and overshoots, so the highlight stretches,
+   snaps back and settles. A vertical squash on top gives it the wobble. */
+.drop{position:absolute;top:.25rem;bottom:.25rem;left:.25rem;right:50%;border-radius:calc(1.4rem*var(--rk));background:var(--sel);
+  transition:left .28s cubic-bezier(.25,.9,.3,1.15),right .6s cubic-bezier(.45,0,.2,1.45) .04s}
+.app[data-view="todos"] .drop{left:50%;right:.25rem;transition:right .28s cubic-bezier(.25,.9,.3,1.15),left .6s cubic-bezier(.45,0,.2,1.45) .04s}
+@keyframes dropA{0%,100%{transform:none}28%{transform:scaleY(.78)}58%{transform:scaleY(1.08)}80%{transform:scaleY(.97)}}
+@keyframes dropB{0%,100%{transform:none}28%{transform:scaleY(.78)}58%{transform:scaleY(1.08)}80%{transform:scaleY(.97)}}
+.anim .drop{animation:dropA .62s ease-out}
+.anim[data-view="todos"] .drop{animation:dropB .62s ease-out}
+@keyframes viewIn{from{opacity:0;transform:translateY(.4rem)}}
+.anim .view{animation:viewIn .26s cubic-bezier(.2,.8,.2,1)}
 .app:not([data-view="todos"]) .bn-sort,.app[data-view="todos"] .bn-year{display:none}
 
 /* dialogs */
@@ -178,8 +194,8 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
 .tick input{width:1.15rem;height:1.15rem;accent-color:var(--accent)}
 .acts{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.25rem}
 .err{color:var(--now);font-size:.85rem}
-.sws{display:flex;flex-wrap:wrap}
-.sw{position:relative;width:2.75rem;height:2.75rem;display:grid;place-items:center;cursor:pointer}
+.sws{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));max-width:24rem}
+.sw{position:relative;height:2.75rem;display:grid;place-items:center;cursor:pointer}
 .sw input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
 .sw i{width:1.6rem;height:1.6rem;border-radius:50%;background:var(--c)}
 .sw input:checked+i{box-shadow:0 0 0 3px var(--side),0 0 0 5px var(--fg)}
@@ -203,6 +219,8 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
 
 @media (max-width:759.98px){
   .desk-only{display:none!important}
+  #v-cal .head h1{flex:1 0 calc(100% - 3.25rem);font-size:1.5rem}
+  #cal-week-m{padding-left:.75rem}
   dialog{margin:auto auto 0;width:100%;max-width:100%;border-radius:calc(1.5rem*var(--rk)) calc(1.5rem*var(--rk)) 0 0}
 }
 @media (min-width:760px){
@@ -217,7 +235,7 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
   .app[data-view="todos"]{grid-template-columns:15.5rem minmax(0,1fr) 20rem}
   .app[data-view="todos"] .today{display:flex}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 <!--body-->
 <div class="app" id="app" data-view="todos">
@@ -237,7 +255,7 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
   <main class="main">
     <section class="view" id="v-todos" aria-label="To-dos">
       <div class="head">
-        <h1 id="todo-title">To-dos</h1><span class="sub" id="todo-count"></span>
+        <h1><span id="todo-title">To-dos</span><span class="sub" id="todo-count"></span></h1>
         <span class="grow"></span>
         <button class="ib phone-only" data-act="search-toggle" aria-label="Search">
           <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/><path d="M13.5 13.5L17 17"/></svg></button>
@@ -262,7 +280,8 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
       <div class="head">
         <button class="ib" data-act="view" data-v="year" aria-label="Year view">
           <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 4l-6 6 6 6"/></svg></button>
-        <h1 id="cal-title"></h1><span class="sub" id="cal-week"></span>
+        <h1><span id="cal-title"></span><span class="sub desk-only" id="cal-week"></span></h1>
+        <span class="sub phone-only" id="cal-week-m"></span>
         <span class="grow"></span>
         <button class="ib" data-act="week-prev" aria-label="Previous week">
           <svg aria-hidden="true" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 4l-6 6 6 6"/></svg></button>
@@ -303,6 +322,7 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
     <button class="fab bn-year" data-act="year-toggle" aria-label="Switch between day and year view">
       <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg></button>
     <div class="pill">
+      <span class="drop" aria-hidden="true"></span>
       <button data-act="view" data-v="cal" id="bn-cal">Calendar</button>
       <button data-act="view" data-v="todos" id="bn-todos">To-dos</button>
     </div>
@@ -441,8 +461,10 @@ function applyLook() {
   const a = /^#[0-9a-f]{6}$/i.test(s.accent) ? s.accent : LOOK.accent;
   r.style.setProperty('--accent', a);
   r.style.setProperty('--on-accent', lum(a) > .2 ? '#12131A' : '#FFFFFF');
-  const m = $('meta[name=theme-color]');
-  if (m) m.content = getComputedStyle(document.body).backgroundColor;
+  const bg = getComputedStyle(document.body).backgroundColor, m = $('meta[name=theme-color]');
+  if (m) m.content = bg;
+  const rgb = (bg.match(/\d+/g) || []).map(Number);
+  if (window.DaylineHost && window.DaylineHost.setChrome && rgb.length >= 3) window.DaylineHost.setChrome(rgb[0], rgb[1], rgb[2]);
 }
 
 /* ---------- to-dos ---------- */
@@ -566,7 +588,7 @@ function renderCal() {
   const wide = mqWide.matches, ws = weekStartOf(curDay), td = today(), sel = ymd(curDay);
   app.classList.toggle('wide7', wide);
   $('#cal-title').textContent = curDay.toLocaleDateString(undefined, {month:'long', year:'numeric'});
-  $('#cal-week').textContent = 'Week ' + isoWeek(curDay);
+  $('#cal-week').textContent = $('#cal-week-m').textContent = 'Week ' + isoWeek(curDay);
   let w = '';
   for (let i = 0; i < 7; i++) {
     const d = addDays(ws, i), k = ymd(d);
@@ -718,7 +740,7 @@ function openSettings() {
     <h3>Look</h3>
     <div class="set">
       <span id="l-theme">Theme</span>${seg('theme', [['system', 'System'], ['dark', 'Dark'], ['light', 'Light']], s.theme)}
-      <span id="l-accent">Accent</span><div class="sws" role="radiogroup" aria-labelledby="l-accent">${ACCENTS.map(([n, h]) => `<label class="sw" style="--c:${h}" title="${n}"><input type="radio" name="accent" value="${h}"${h.toLowerCase() === s.accent.toLowerCase() ? ' checked' : ''}><i></i><span class="vh">${n}</span></label>`).join('')}<label class="sw custom" title="Custom colour"><input type="color" name="accent" id="s-custom" value="${esc(s.accent)}"><i${preset ? '' : ` style="background:${esc(s.accent)};box-shadow:0 0 0 3px var(--side),0 0 0 5px var(--fg)"`}></i><span class="vh">Custom colour</span></label></div>
+      <span id="l-accent" style="grid-column:1/-1;margin-bottom:-.4rem">Accent</span><div class="sws" style="grid-column:1/-1" role="radiogroup" aria-labelledby="l-accent">${ACCENTS.map(([n, h]) => `<label class="sw" style="--c:${h}" title="${n}"><input type="radio" name="accent" value="${h}"${h.toLowerCase() === s.accent.toLowerCase() ? ' checked' : ''}><i></i><span class="vh">${n}</span></label>`).join('')}<label class="sw custom" title="Custom colour"><input type="color" name="accent" id="s-custom" value="${esc(s.accent)}"><i${preset ? '' : ` style="background:${esc(s.accent)};box-shadow:0 0 0 3px var(--side),0 0 0 5px var(--fg)"`}></i><span class="vh">Custom colour</span></label></div>
       <span id="l-cards">Cards</span>${seg('cards', [['tinted', 'Tinted'], ['plain', 'Plain']], s.cards)}
       <span id="l-corners">Corners</span>${seg('corners', [['square', 'Square'], ['soft', 'Soft'], ['round', 'Round']], s.corners)}
       <span id="l-density">Spacing</span>${seg('density', [['cosy', 'Cosy'], ['compact', 'Compact']], s.density)}
@@ -1094,6 +1116,7 @@ addEventListener('storage', e => {
   try { S = migrate(JSON.parse(e.newValue)); rebuildSnap(); applyLook(); render(); } catch (err) {}
 });
 
+document.addEventListener('pointerdown', () => app.classList.add('anim'), {once:true});
 applyLook();
 render();
 syncUI();

@@ -2,10 +2,15 @@ package app.dayline;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -13,6 +18,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import org.json.JSONObject;
@@ -38,6 +44,7 @@ public class MainActivity extends Activity {
     private static final String APK_TYPE = "application/vnd.android.package-archive";
 
     private WebView web;
+    private FrameLayout root;
     private ValueCallback<Uri[]> fileCallback;
     private String pendingBackup;
 
@@ -82,7 +89,20 @@ public class MainActivity extends Activity {
             }
         });
 
-        setContentView(web);
+        root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF15161A);
+        root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+        // From Android 15 an app draws behind the status and gesture bars. Keep the page clear of them, the camera
+        // cut-out and the keyboard; the strip behind the bars is painted in the app's own background colour.
+        if (Build.VERSION.SDK_INT >= 35) {
+            getWindow().setNavigationBarContrastEnforced(false);
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                Insets in = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+                v.setPadding(in.left, in.top, in.right, in.bottom);
+                return WindowInsets.CONSUMED;
+            });
+        }
         web.loadUrl("file:///android_asset/index.html");
     }
 
@@ -268,6 +288,29 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String appVersion() { return currentVersion(); }
+
+        /** The page's background colour, so the bars around it match the chosen theme. */
+        @JavascriptInterface
+        public void setChrome(int r, int g, int b) {
+            runOnUiThread(() -> {
+                int c = Color.rgb(r, g, b);
+                boolean light = r * 299 + g * 587 + b * 114 > 150000;
+                root.setBackgroundColor(c);
+                web.setBackgroundColor(c);
+                if (Build.VERSION.SDK_INT < 35) {
+                    getWindow().setStatusBarColor(c);
+                    getWindow().setNavigationBarColor(c);
+                }
+                if (Build.VERSION.SDK_INT >= 30) {
+                    int mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                    WindowInsetsController ctl = getWindow().getInsetsController();
+                    if (ctl != null) ctl.setSystemBarsAppearance(light ? mask : 0, mask);
+                } else {
+                    getWindow().getDecorView().setSystemUiVisibility(light
+                        ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
+                }
+            });
+        }
 
         @JavascriptInterface
         public void checkUpdate(boolean manual) { MainActivity.this.checkUpdate(manual); }
