@@ -32,14 +32,22 @@ jobs:
           set -o pipefail
           gradle -p android assembleRelease --console=plain 2>&1 | tee build.log
           cp android/app/build/outputs/apk/release/app-release.apk dayline.apk
+      # Arch Linux package, made and tried out inside an Arch container. If this step breaks, the Android and web
+      # builds are still published; arch.log and linux-test.txt say what happened.
+      - name: Build and test the Arch Linux package
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/work" archlinux:latest bash /work/linux/ci-arch.sh > arch.log 2>&1 || echo "failed with $?" >> arch.log
+          tail -60 arch.log
       # The app reads latest.json to see whether a newer build exists and to check its download.
       - name: Describe the build
         env:
           NOTES: ${{ github.event.head_commit.message }}
         run: |
           jq -n --argjson build "${{ github.run_number }}" --arg version "1.0" \
-            --arg sha "$(sha256sum dayline.apk | cut -d' ' -f1)" --arg notes "$(printf '%s' "$NOTES" | head -1)" \
-            '{build:$build, version:$version, sha256:$sha, notes:$notes}' > latest.json
+            --arg sha "$(sha256sum dayline.apk | cut -d' ' -f1)" --arg web "$(sha256sum dayline-web.tar.gz | cut -d' ' -f1)" \
+            --arg notes "$(printf '%s' "$NOTES" | head -1)" \
+            '{build:$build, version:$version, sha256:$sha, web_sha256:$web, notes:$notes}' > latest.json
           cat latest.json
       - uses: softprops/action-gh-release@v2
         with:
@@ -48,6 +56,11 @@ jobs:
           files: |
             dayline.apk
             latest.json
+            dayline-web.tar.gz
+            dayline-linux.tar.gz
+            dayline-any.pkg.tar.zst
+            linux-test.txt
+            arch.log
       # The same page, installable from a browser on Windows and Linux (served by GitHub Pages from the gh-pages branch).
       - name: Publish the web version
         run: |

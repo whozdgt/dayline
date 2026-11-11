@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Dayline
+Comment=To-dos and calendar
+Exec=dayline
+Icon=app.dayline
+Terminal=false
+Categories=Office;Calendar;ProjectManagement;
+Keywords=todo;tasks;calendar;planner;
+StartupNotify=true
+StartupWMClass=app.dayline

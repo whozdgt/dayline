@@ -1,0 +1,3 @@
+#!/bin/sh
+# The system Python, so a pyenv or conda Python earlier in PATH (without the GTK bindings) doesn't get picked up.
+exec /usr/bin/python3 /usr/share/dayline/dayline.py "$@"

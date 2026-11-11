@@ -1,5 +1,5 @@
 """Wraps src/app.html into an installable app in dist/ and zips it."""
-import pathlib, shutil, zipfile
+import io, json, os, pathlib, shutil, tarfile, zipfile
 
 root = pathlib.Path(__file__).parent
 src, dist = root / "src", root / "dist"
@@ -31,6 +31,26 @@ page = f"""<!doctype html>
 for name in ("sw.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png"):
     if (src / name).exists():
         shutil.copy(src / name, dist / name)
+
+# The build number is the same on every platform; apps compare it with latest.json to see if they are out of date.
+build = int(os.environ.get("GITHUB_RUN_NUMBER", "0"))
+(dist / "build.json").write_text(json.dumps({"build": build}) + "\n", encoding="utf-8")
+
+def add(tar, path, name, mode=0o644):
+    data = path.read_bytes()
+    info = tarfile.TarInfo(name); info.size = len(data); info.mode = mode
+    tar.addfile(info, io.BytesIO(data))
+
+# dayline-web.tar.gz: just the pages (what the Linux app downloads to update itself).
+# dayline-linux.tar.gz: the pages plus the Linux window, launcher and menu entry (what the Arch package is made from).
+with tarfile.open(root / "dayline-web.tar.gz", "w:gz") as web, tarfile.open(root / "dayline-linux.tar.gz", "w:gz") as linux:
+    for f in sorted(dist.iterdir()):
+        if f.is_file():
+            add(web, f, f.name)
+            add(linux, f, "dayline-linux/web/" + f.name)
+    add(linux, root / "linux" / "dayline.py", "dayline-linux/dayline.py")
+    add(linux, root / "linux" / "dayline", "dayline-linux/dayline", 0o755)
+    add(linux, root / "linux" / "app.dayline.desktop", "dayline-linux/app.dayline.desktop")
 
 with zipfile.ZipFile(root / "dayline.zip", "w", zipfile.ZIP_DEFLATED) as z:
     for f in sorted(dist.iterdir()):

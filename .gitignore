@@ -6,3 +6,8 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+dayline-web.tar.gz
+dayline-linux.tar.gz
+dayline-any.pkg.tar.zst
+linux-test.txt
+arch.log

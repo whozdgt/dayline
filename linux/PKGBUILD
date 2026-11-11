@@ -1,0 +1,28 @@
+# Dayline for Arch Linux (and CachyOS, EndeavourOS, Manjaro ...).
+# Build and install it yourself:   makepkg -si
+# Or install the ready-made package from the latest release (see README.md).
+pkgname=dayline
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='To-dos and a calendar that work offline and sync between devices'
+arch=('any')
+url='https://github.com/whozdgt/dayline'
+license=('LicenseRef-unlicensed')
+depends=('python' 'python-gobject' 'gtk4' 'webkitgtk-6.0')
+source=("dayline-linux.tar.gz::$url/releases/latest/download/dayline-linux.tar.gz")
+sha256sums=('SKIP')
+
+pkgver() {
+  printf '1.0.%s' "$(/usr/bin/python3 -c "import json; print(json.load(open('$srcdir/dayline-linux/web/build.json'))['build'])")"
+}
+
+package() {
+  cd "$srcdir/dayline-linux"
+  install -dm755 "$pkgdir/usr/share/dayline"
+  cp -r web "$pkgdir/usr/share/dayline/web"
+  install -Dm644 dayline.py "$pkgdir/usr/share/dayline/dayline.py"
+  install -Dm755 dayline "$pkgdir/usr/bin/dayline"
+  install -Dm644 app.dayline.desktop "$pkgdir/usr/share/applications/app.dayline.desktop"
+  install -Dm644 web/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/app.dayline.svg"
+  install -Dm644 web/icon-512.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/app.dayline.png"
+}
