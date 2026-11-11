@@ -1,0 +1,8 @@
+dist/
+dayline.zip
+build.log
+*.jks.b64
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

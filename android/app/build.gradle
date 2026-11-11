@@ -1,0 +1,25 @@
+plugins { id 'com.android.application' }
+
+// The web app in ../dist is bundled as assets, so the APK works with no connection.
+android {
+    namespace 'app.dayline'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'app.dayline'
+        minSdk 26
+        targetSdk 34
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int)
+        versionName '1.0'
+    }
+    sourceSets { main { assets.srcDirs = ['../../dist'] } }
+    signingConfigs {
+        release {
+            // One fixed key, so new builds install over old ones and keep your data.
+            storeFile file(System.getenv('DAYLINE_KEYSTORE') ?: '../dayline.jks')
+            storePassword System.getenv('DAYLINE_KEY_PASS') ?: project.findProperty('daylineKeyPass')
+            keyAlias 'dayline'
+            keyPassword System.getenv('DAYLINE_KEY_PASS') ?: project.findProperty('daylineKeyPass')
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.release; minifyEnabled false } }
+}
