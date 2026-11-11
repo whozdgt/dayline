@@ -356,15 +356,9 @@ const weekStartOf = d => addDays(startOfDay(d), -((d.getDay() - S.settings.weekS
 
 /* ---------- data ---------- */
 function seed() {
-  const T = (title, color, x) => ({id:uid(), title, notes:'', due:'', color, flag:false, status:'todo', created:Date.now(), ...x});
   return {v:1, settings:{...DEF}, todos:[
-    T("draft email to big rk ABT jelly's and teddy", 'amber'),
-    T('fairy carex pure spread biscuits', 'amber', {flag:true}),
-    T('revise defeated and victorious reactions to the treaties, quizziz.', 'amber'),
-    T('COMPLETE COURSEWORK BY NEXT WEEK FRIDAY (UP TO CUSTOMER SERVICE SLIDE)', 'amber', {due:'2026-11-20'}),
-    T('WAIT FOR OPPO TO REPLY/ CONSISTENTLY CHECK, THEN UPDATE SLIDE 3 OF COURSEWORK', 'amber'),
-    T('mindmap', 'teal')
-  ], events:[{id:uid(), title:'SLEEP', start:'2026-11-10T22:00', end:'2026-11-11T06:30', repeat:'daily', color:'blue', notes:''}]};
+    {id:uid(), title:'Welcome to Dayline. Tick this off, then add your own to-dos.', notes:'Tap a to-do to edit it. Settings has the look and your backup.', due:'', color:'blue', flag:false, status:'todo', created:Date.now()}
+  ], events:[]};
 }
 function migrate(s) {
   return {v:1, settings:{...DEF, ...(s.settings || {})},
