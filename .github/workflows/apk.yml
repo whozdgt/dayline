@@ -32,11 +32,22 @@ jobs:
           set -o pipefail
           gradle -p android assembleRelease --console=plain 2>&1 | tee build.log
           cp android/app/build/outputs/apk/release/app-release.apk dayline.apk
+      # The app reads latest.json to see whether a newer build exists and to check its download.
+      - name: Describe the build
+        env:
+          NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          jq -n --argjson build "${{ github.run_number }}" --arg version "1.0" \
+            --arg sha "$(sha256sum dayline.apk | cut -d' ' -f1)" --arg notes "$(printf '%s' "$NOTES" | head -1)" \
+            '{build:$build, version:$version, sha256:$sha, notes:$notes}' > latest.json
+          cat latest.json
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Build ${{ github.run_number }}
-          files: dayline.apk
+          files: |
+            dayline.apk
+            latest.json
       - name: Keep the log when a build fails
         if: failure()
         run: |

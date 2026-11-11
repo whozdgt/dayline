@@ -3,7 +3,9 @@ package app.dayline;
 import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -13,15 +15,35 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 /** Shows the bundled web app full screen. Data stays in the app's own storage on the phone. */
 public class MainActivity extends Activity {
     private static final int PICK_FILE = 1, SAVE_FILE = 2;
+    /** Every build is published as a GitHub release holding the APK and a small latest.json that describes it. */
+    private static final String RELEASES = "https://github.com/whozdgt/dayline/releases/latest/download/";
+    private static final String APK_TYPE = "application/vnd.android.package-archive";
+
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
     private String pendingBackup;
+
+    private volatile boolean updateBusy, updateAvailable;
+    private volatile int latestBuild;
+    private volatile String latestSha = "";
 
     @Override
     protected void onCreate(Bundle state) {
@@ -94,6 +116,144 @@ public class MainActivity extends Activity {
     @Override protected void onPause() { super.onPause(); web.onPause(); }
     @Override protected void onResume() { super.onResume(); web.onResume(); }
 
+    // ---- updates: read latest.json, download the newer APK, check it, hand it to Android's installer ----
+
+    private int currentBuild() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; } catch (Exception e) { return 0; }
+    }
+
+    private String currentVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName + " (build " + currentBuild() + ")";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** Tells the page what the updater is doing; the page shows it in Settings. */
+    private void report(String status) {
+        try {
+            JSONObject o = new JSONObject();
+            o.put("status", status);
+            o.put("available", updateAvailable);
+            o.put("busy", updateBusy);
+            o.put("latest", latestBuild);
+            final String js = "window.daylineUpdate&&window.daylineUpdate(" + o + ")";
+            runOnUiThread(() -> web.evaluateJavascript(js, null));
+        } catch (Exception ignored) { }
+    }
+
+    private void download(String address, OutputStream out, boolean showProgress) throws IOException {
+        HttpURLConnection c = (HttpURLConnection) new URL(address).openConnection();
+        try {
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(30000);
+            c.setUseCaches(false);
+            c.setRequestProperty("User-Agent", "dayline");
+            int code = c.getResponseCode();
+            if (code == 404) throw new FileNotFoundException(address);
+            if (code != 200) throw new IOException("HTTP " + code);
+            long total = c.getContentLength(), got = 0;
+            int shown = -1;
+            byte[] buf = new byte[16384];
+            try (InputStream in = c.getInputStream()) {
+                for (int n; (n = in.read(buf)) > 0; ) {
+                    out.write(buf, 0, n);
+                    got += n;
+                    int pct = total > 0 ? (int) (got * 100 / total) : -1;
+                    if (showProgress && pct != shown) { shown = pct; report("Downloading… " + pct + "%"); }
+                }
+            }
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private static String sha256(File f) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        byte[] buf = new byte[16384];
+        try (InputStream in = new FileInputStream(f)) {
+            for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (byte b : md.digest()) sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
+    private void checkUpdate(final boolean manual) {
+        if (updateBusy) return;
+        updateBusy = true;
+        if (manual) report("Checking…");
+        new Thread(() -> {
+            String status;
+            try {
+                ByteArrayOutputStream json = new ByteArrayOutputStream();
+                download(RELEASES + "latest.json", json, false);
+                JSONObject o = new JSONObject(new String(json.toByteArray(), StandardCharsets.UTF_8));
+                int build = o.optInt("build");
+                if (build <= 0) throw new IOException("no build number");
+                latestBuild = build;
+                latestSha = o.optString("sha256");
+                updateAvailable = build > currentBuild();
+                status = updateAvailable ? "Build " + build + " is available." : "You're up to date.";
+            } catch (FileNotFoundException e) {
+                status = manual ? "No update has been published yet." : "";
+            } catch (Exception e) {
+                status = manual ? "Couldn't reach GitHub. Check your connection and try again." : "";
+            }
+            updateBusy = false;
+            report(status);
+        }).start();
+    }
+
+    private void installUpdate() {
+        if (!updateAvailable || updateBusy) return;
+        // Android asks once, per app, before an app may install other apps (including itself).
+        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
+            } catch (Exception ignored) { }
+            report("Android needs your OK first. Switch on “Allow from this source”, go back, then tap Update now again.");
+            return;
+        }
+        updateBusy = true;
+        report("Downloading… 0%");
+        new Thread(() -> {
+            File apk = ApkProvider.file(this);
+            String failed = null;
+            try {
+                apk.getParentFile().mkdirs();
+                String want = latestSha;
+                // A finished download from an earlier try (installer cancelled) can be reused.
+                if (want.isEmpty() || !apk.exists() || !sha256(apk).equalsIgnoreCase(want)) {
+                    try (OutputStream out = new FileOutputStream(apk)) {
+                        download(RELEASES + "dayline.apk", out, true);
+                    }
+                    if (want.isEmpty() || !sha256(apk).equalsIgnoreCase(want)) failed = "The downloaded update looks damaged. Try again in a minute.";
+                }
+            } catch (Exception e) {
+                failed = "The download didn't finish. Check your connection and try again.";
+            }
+            updateBusy = false;
+            if (failed != null) {
+                apk.delete();
+                report(failed);
+                return;
+            }
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(Uri.parse("content://" + getPackageName() + ".update/dayline.apk"), APK_TYPE)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK));
+                    report("Tap Install in the Android prompt. Your to-dos are kept.");
+                } catch (Exception e) {
+                    report("Couldn't open Android's installer.");
+                }
+            });
+        }).start();
+    }
+
+    /** What the page can ask the app to do. */
     private class Host {
         /** "Download backup" asks where to save the file. */
         @JavascriptInterface
@@ -105,5 +265,14 @@ public class MainActivity extends Activity {
                 try { startActivityForResult(i, SAVE_FILE); } catch (Exception e) { pendingBackup = null; }
             });
         }
+
+        @JavascriptInterface
+        public String appVersion() { return currentVersion(); }
+
+        @JavascriptInterface
+        public void checkUpdate(boolean manual) { MainActivity.this.checkUpdate(manual); }
+
+        @JavascriptInterface
+        public void installUpdate() { runOnUiThread(MainActivity.this::installUpdate); }
     }
 }

@@ -62,6 +62,7 @@ h1,h2,h3,p{margin:0}
 .btn{min-height:2.75rem;padding:0 1rem;border-radius:calc(.75rem*var(--rk));background:var(--raised);font-weight:500;font-size:.9rem;display:inline-flex;align-items:center;justify-content:center;gap:.5rem;white-space:nowrap}
 .btn.primary{background:var(--accent);color:var(--on-accent);font-weight:600}
 .btn.danger{color:var(--now)}
+.btn:disabled{opacity:.5;cursor:default}
 .in{width:100%;min-height:2.75rem;padding:.5rem .9rem;border-radius:calc(.75rem*var(--rk));border:1px solid var(--line);background:var(--bg);min-width:0}
 select.in{width:auto;padding-right:.5rem}
 textarea.in{resize:vertical}
@@ -687,10 +688,33 @@ function openSettings() {
       <span id="l-weekStart">Week starts</span>${seg('weekStart', [[0, 'Sunday'], [1, 'Monday']], s.weekStart)}
       <span id="l-clock">Clock</span>${seg('clock', [['24', '24-hour'], ['12', '12-hour']], s.clock)}
     </div>
+    ${HOST ? `<h3>App</h3><div id="upd" aria-live="polite" style="display:flex;flex-direction:column;gap:.6rem">${updHTML()}</div>` : ''}
     <h3>Your data</h3>
     <p class="note">Everything is saved on this device and works offline. A backup holds your to-dos, events and settings.</p>
     <div class="acts">${SA ? '<button type="button" class="btn" data-act="export">Download backup</button>' : ''}<button type="button" class="btn" data-act="copy">Copy backup</button><button type="button" class="btn" data-act="import">Import backup</button></div>
   </form>`);
+}
+/* ---------- app updates (Android app only; the app itself does the downloading) ---------- */
+const HOST = window.DaylineHost && window.DaylineHost.checkUpdate ? window.DaylineHost : null;
+let upd = {status:'', available:false, busy:false}, updTold = false;
+function updHTML() {
+  const off = upd.busy ? ' disabled' : '';
+  return `<p class="note">Version ${esc(HOST.appVersion())}${upd.status ? '<br>' + esc(upd.status) : ''}</p>
+    <div class="acts"><button type="button" class="btn" data-act="upd-check"${off}>Check for updates</button>${upd.available ? `<button type="button" class="btn primary" data-act="upd-install"${off}>Update now</button>` : ''}</div>`;
+}
+window.daylineUpdate = u => {
+  upd = u;
+  const box = $('#upd');
+  if (box) box.innerHTML = updHTML();
+  else if (u.available && !updTold) { updTold = true; toast('A new version of Dayline is ready', 'Update', () => { openSettings(); HOST.installUpdate(); }); }
+};
+function autoCheck() {
+  if (!HOST) return;
+  let last = 0;
+  try { last = +localStorage.getItem('dayline.updcheck') || 0; } catch (e) {}
+  if (Date.now() - last < 36e5) return;              // at most once an hour
+  try { localStorage.setItem('dayline.updcheck', Date.now()); } catch (e) {}
+  setTimeout(() => HOST.checkUpdate(false), 3000);
 }
 const backup = () => JSON.stringify({app:'dayline', v:1, exported:new Date().toISOString(), todos:S.todos, events:S.events, settings:S.settings}, null, 1);
 
@@ -804,6 +828,8 @@ document.addEventListener('click', e => {
       break;
     }
     case 'import': $('#import-file').click(); break;
+    case 'upd-check': HOST.checkUpdate(true); break;
+    case 'upd-install': HOST.installUpdate(); break;
     case 'toast-act': { const fn = toastFn; $('#toast').hidden = true; if (fn) fn(); break; }
   }
 });
@@ -823,7 +849,7 @@ mqDesk.addEventListener('change', render);
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change', applyLook);
 function tick() { if (today() !== lastDay) { lastDay = today(); render(); } else updateNow(); }
 setInterval(tick, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { tick(); autoCheck(); } });
 addEventListener('storage', e => {
   if (e.key !== KEY || !e.newValue) return;
   try { S = migrate(JSON.parse(e.newValue)); applyLook(); render(); } catch (err) {}
@@ -831,5 +857,6 @@ addEventListener('storage', e => {
 
 applyLook();
 render();
+autoCheck();
 })();
 </script>
