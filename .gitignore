@@ -11,3 +11,4 @@ dayline-linux.tar.gz
 dayline-any.pkg.tar.zst
 linux-test.txt
 arch.log
+__pycache__/
