@@ -192,6 +192,11 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
 .seg label:has(input:checked){background:var(--sel);color:var(--fg);font-weight:600}
 .seg label:has(input:focus-visible){outline:2px solid var(--accent-text);outline-offset:1px}
 .note{font-size:.85rem;color:var(--mute)}
+.note b{color:var(--fg);font-weight:600}
+.stack{display:flex;flex-direction:column;gap:.6rem}
+.seg button{flex:1;min-height:2.6rem;border-radius:calc(.65rem*var(--rk));font-size:.85rem;color:var(--fg2)}
+.seg button[aria-pressed="true"]{background:var(--sel);color:var(--fg);font-weight:600}
+.store small{display:block;overflow-wrap:anywhere}
 
 .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:6.5rem;background:var(--fg);color:var(--bg);padding:.35rem .4rem .35rem 1rem;border-radius:999px;display:flex;gap:.5rem;align-items:center;font-size:.9rem;z-index:5;max-width:calc(100% - 2rem);min-height:2.75rem}
 .toast button{min-height:2.25rem;padding:0 .8rem;border-radius:999px;font-weight:600;background:color-mix(in oklab,var(--bg) 18%,transparent)}
@@ -224,7 +229,7 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
     <div id="colors"></div>
     <div id="mini"></div>
     <div class="store">
-      <div><b>Saved on this device</b><small>Works offline</small></div>
+      <div style="min-width:0"><b id="store-t">Saved on this device</b><small id="store-s">Works offline</small></div>
       <button class="btn" data-act="settings">Settings</button>
     </div>
   </aside>
@@ -313,7 +318,10 @@ dialog h3{font-size:.72rem;font-weight:500;color:var(--mute);letter-spacing:.06e
 <script>
 (() => {
 'use strict';
-const SA = !!window.DAYLINE_STANDALONE, KEY = 'dayline.v1';
+const SA = !!window.DAYLINE_STANDALONE, KEY = 'dayline.v1', AKEY = 'dayline.auth';
+// Public values only: the publishable key is made to live inside apps, and row-level security protects the data.
+const SUPA_URL = 'https://mljdegznscdoctiizyij.supabase.co', SUPA_KEY = 'sb_publishable_Kr-r4bv6fra9NbkDGazdDw_jBQ_x3lk';
+const MAIL = 'users.invalid';      // usernames are stored as made-up addresses, because sign-in is username + password only
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad = n => String(n).padStart(2, '0');
@@ -358,22 +366,55 @@ const weekStartOf = d => addDays(startOfDay(d), -((d.getDay() - S.settings.weekS
 /* ---------- data ---------- */
 function seed() {
   return {v:1, settings:{...DEF}, todos:[
-    {id:uid(), title:'Welcome to Dayline. Tick this off, then add your own to-dos.', notes:'Tap a to-do to edit it. Settings has the look and your backup.', due:'', color:'blue', flag:false, status:'todo', created:Date.now()}
+    {id:'welcome', title:'Welcome to Dayline. Tick this off, then add your own to-dos.', notes:'Tap a to-do to edit it. Settings has the look, your account and your backup.', due:'', color:'blue', flag:false, status:'todo', created:0, updated:0}
   ], events:[]};
 }
 function migrate(s) {
   return {v:1, settings:{...DEF, ...(s.settings || {})},
     todos:(Array.isArray(s.todos) ? s.todos : []).filter(t => t && t.id && typeof t.title === 'string'),
-    events:(Array.isArray(s.events) ? s.events : []).filter(e => e && e.id && e.start && e.end)};
+    events:(Array.isArray(s.events) ? s.events : []).filter(e => e && e.id && e.start && e.end),
+    gone:s.gone && typeof s.gone === 'object' ? s.gone : {},
+    sync:{cursor:'', ...(s.sync || {}), dirty:(s.sync && s.sync.dirty) || {}}};
 }
 function load() {
   try { const r = localStorage.getItem(KEY); if (r) return migrate(JSON.parse(r)); } catch (e) {}
   return seed();
 }
-function save() {
+function write() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Could not save on this device'); }
 }
-let S = load();
+// Every change goes through save(). touch() works out which items changed since the last save, stamps them with
+// the time, and (when signed in) queues them for sync; items that vanished are queued as deletions.
+const strip = it => { const {updated, ...rest} = it; return JSON.stringify(rest); };
+let snap = new Map();
+function rebuildSnap() {
+  snap = new Map();
+  for (const it of S.todos) snap.set(it.id, 't' + strip(it));
+  for (const it of S.events) snap.set(it.id, 'e' + strip(it));
+}
+function touch() {
+  const now = Date.now(), seen = new Set();
+  let changed = false;
+  for (const [k, list] of [['t', S.todos], ['e', S.events]]) for (const it of list) {
+    seen.add(it.id);
+    const j = k + strip(it);
+    if (snap.get(it.id) === j) continue;
+    it.updated = now; snap.set(it.id, j); changed = true;
+    if (A) { S.sync.dirty[it.id] = 1; delete S.gone[it.id]; }
+  }
+  for (const [id, j] of [...snap]) if (!seen.has(id)) {
+    snap.delete(id); changed = true;
+    if (A) { S.gone[id] = {kind:j[0] === 'e' ? 'event' : 'todo', updated:now}; S.sync.dirty[id] = 1; }
+  }
+  return changed;
+}
+function save() {
+  const changed = touch();
+  write();
+  if (changed && A) scheduleSync(2500);
+}
+let S = load(), A = loadAuth();
+rebuildSnap();
 let curDay = startOfDay(new Date()), yearY = curDay.getFullYear(), miniY = curDay.getFullYear(), miniM = curDay.getMonth();
 let query = '', colorF = '', lastColor = 'amber', lastDay = today();
 const scrolled = {};
@@ -415,7 +456,8 @@ function matches() {
 }
 function sorted(a) {
   const s = S.settings.sort, c = [...a];
-  if (s === 'due') c.sort((x, y) => (x.due || '9').localeCompare(y.due || '9'));
+  if (s === 'manual') c.sort((x, y) => (y.created || 0) - (x.created || 0));
+  else if (s === 'due') c.sort((x, y) => (x.due || '9').localeCompare(y.due || '9'));
   else if (s === 'color') { const o = Object.keys(COLORS); c.sort((x, y) => o.indexOf(x.color) - o.indexOf(y.color)); }
   else if (s === 'az') c.sort((x, y) => x.title.localeCompare(y.title, undefined, {sensitivity:'base'}));
   else if (s === 'flag') c.sort((x, y) => (y.flag ? 1 : 0) - (x.flag ? 1 : 0));
@@ -688,12 +730,202 @@ function openSettings() {
       <span id="l-weekStart">Week starts</span>${seg('weekStart', [[0, 'Sunday'], [1, 'Monday']], s.weekStart)}
       <span id="l-clock">Clock</span>${seg('clock', [['24', '24-hour'], ['12', '12-hour']], s.clock)}
     </div>
+    <h3>Account</h3>
+    <div id="acct" class="stack" aria-live="polite">${acctHTML()}</div>
     ${HOST ? `<h3>App</h3><div id="upd" aria-live="polite" style="display:flex;flex-direction:column;gap:.6rem">${updHTML()}</div>` : ''}
     <h3>Your data</h3>
     <p class="note">Everything is saved on this device and works offline. A backup holds your to-dos, events and settings.</p>
     <div class="acts">${SA ? '<button type="button" class="btn" data-act="export">Download backup</button>' : ''}<button type="button" class="btn" data-act="copy">Copy backup</button><button type="button" class="btn" data-act="import">Import backup</button></div>
   </form>`);
 }
+/* ---------- account and sync ----------
+   Username + password accounts on Supabase (the same sign-in service Paraplay uses).
+   Every to-do and event is one row. Each device pulls rows changed since its last sync, keeps whichever
+   copy was edited most recently, then pushes its own changes. Settings and the look stay per device. */
+function loadAuth() {
+  try { const a = JSON.parse(localStorage.getItem(AKEY)); if (a && a.refresh && a.uid) return a; } catch (e) {}
+  return null;
+}
+function storeSession(d) {
+  A.access = d.access_token;
+  if (d.refresh_token) A.refresh = d.refresh_token;
+  A.expires = Date.now() + (d.expires_in || 3600) * 1000;
+  if (d.user && d.user.id) A.uid = d.user.id;
+  try { localStorage.setItem(AKEY, JSON.stringify(A)); } catch (e) {}
+}
+let refreshing = null, syncing = false, syncAgain = false, syncT, syncErr = '', lastSync = 0;
+async function token() {
+  if (!A) return null;
+  if (A.access && Date.now() < A.expires - 60000) return A.access;
+  if (!refreshing) refreshing = (async () => {
+    try {
+      const d = await api('/auth/v1/token?grant_type=refresh_token', {method:'POST', auth:false, body:{refresh_token:A.refresh}});
+      if (!A) return null;
+      storeSession(d);
+      return A.access;
+    } catch (e) {
+      // Only a refusal ends the session. A dropped connection must not sign you out.
+      if ([400, 401, 403].includes(e.status)) signOutLocal('Your session ended. Please sign in again.');
+      return null;
+    } finally { refreshing = null; }
+  })();
+  return refreshing;
+}
+async function api(path, {method = 'GET', body, auth = true, headers = {}} = {}) {
+  const h = {apikey:SUPA_KEY, 'Content-Type':'application/json', ...headers};
+  if (auth) { const t = await token(); if (!t) throw {status:401}; h.Authorization = 'Bearer ' + t; }
+  const r = await fetch(SUPA_URL + path, {method, headers:h, body:body === undefined ? undefined : JSON.stringify(body)});
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) {}
+  if (!r.ok) throw {status:r.status, data};
+  return data;
+}
+function authError(e, create) {
+  if (e.status === undefined) return "Couldn't reach the server. Check your connection and try again.";
+  const d = e.data || {}, c = [d.error_code, d.code, d.msg, d.error_description, d.message].join(' ');
+  if (e.status === 429) return 'Too many tries. Wait a minute and try again.';
+  if (/already|exists/i.test(c)) return 'That username is taken. If it is yours, sign in instead.';
+  if (/weak/i.test(c)) return 'Pick a stronger password.';
+  if (!create && (e.status === 400 || /invalid/i.test(c))) return 'Wrong username or password.';
+  return `That didn't work (error ${e.status || 'unknown'}). Try again in a minute.`;
+}
+function openAuth(mode, keep) {
+  const create = mode === 'create';
+  show(`<form method="dialog" data-kind="auth" data-mode="${create ? 'create' : 'in'}">
+    <div class="dh"><h2>${create ? 'Create account' : 'Sign in'}</h2><button type="button" class="ib" data-act="close" aria-label="Close"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l10 10M14 4L4 14"/></svg></button></div>
+    <div class="seg"><button type="button" data-act="auth-mode" data-m="in" aria-pressed="${!create}">Sign in</button><button type="button" data-act="auth-mode" data-m="create" aria-pressed="${create}">Create account</button></div>
+    <label class="fld"><span>Username</span><input class="in" id="a-user" name="username" required maxlength="20" autocomplete="username" autocapitalize="none" spellcheck="false" value="${esc(keep ? keep[0] : '')}"></label>
+    <label class="fld"><span>Password</span><input class="in" id="a-pass" name="password" type="password" required maxlength="72" autocomplete="${create ? 'new-password' : 'current-password'}" value="${esc(keep ? keep[1] : '')}"></label>
+    <p class="err" id="a-msg" role="alert" hidden></p>
+    <p class="note">${create ? 'Usernames are 3 to 20 letters, numbers or underscores. No email needed. ' : 'A Paraplay account works here too. '}There is no password reset, so keep your password safe.</p>
+    <div class="acts"><span class="grow"></span><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary">${create ? 'Create account' : 'Sign in'}</button></div>
+  </form>`);
+}
+async function doAuth(f) {
+  const d = new FormData(f), u = String(d.get('username') || '').trim().toLowerCase(), p = String(d.get('password') || ''), create = f.dataset.mode === 'create';
+  const msg = t => { const m = $('#a-msg'); if (m) { m.textContent = t; m.hidden = !t; } };
+  if (!u || !p) return msg('Enter your username and password.');
+  if (create && !/^[a-z0-9_]{3,20}$/.test(u)) return msg('Usernames are 3 to 20 letters, numbers or underscores.');
+  if (create && p.length < 8) return msg('Use a password of at least 8 characters.');
+  const btn = $('.btn.primary', f);
+  btn.disabled = true; msg('');
+  try {
+    const body = {email:u + '@' + MAIL, password:p};
+    const s = create ? await api('/auth/v1/signup', {method:'POST', auth:false, body:{...body, data:{username:u}}})
+                     : await api('/auth/v1/token?grant_type=password', {method:'POST', auth:false, body});
+    if (!s || !s.access_token || !s.user) throw {status:0, data:s};
+    A = {username:u};
+    storeSession(s);
+    // Everything already on this device goes into the account on the first sync.
+    S.sync = {cursor:'', dirty:{}}; S.gone = {};
+    for (const it of [...S.todos, ...S.events]) S.sync.dirty[it.id] = 1;
+    write();
+    if (dlg.open) dlg.close();
+    toast('Signed in as @' + u);
+    sync();
+  } catch (e) { btn.disabled = false; msg(authError(e, create)); }
+}
+function signOutLocal(text) {
+  A = null;
+  try { localStorage.removeItem(AKEY); } catch (e) {}
+  S.sync = {cursor:'', dirty:{}}; S.gone = {};
+  syncErr = ''; lastSync = 0;
+  write(); syncUI();
+  if (text) toast(text);
+}
+function signOut() {
+  // Ends this device's session only; other devices (and Paraplay) stay signed in.
+  if (A && A.access) fetch(SUPA_URL + '/auth/v1/logout?scope=local', {method:'POST', headers:{apikey:SUPA_KEY, Authorization:'Bearer ' + A.access}}).catch(() => {});
+  signOutLocal('Signed out. Your to-dos stay on this device.');
+}
+const findItem = id => S.todos.find(x => x.id === id) || S.events.find(x => x.id === id);
+function mergeRow(r) {
+  const data = r.data || {}, ru = +data.updated || 0, isEvent = r.kind === 'event', list = isEvent ? S.events : S.todos;
+  const i = list.findIndex(x => x.id === r.id), L = i >= 0 ? list[i] : null, G = S.gone[r.id];
+  if (r.deleted) {
+    if (L && ru >= (L.updated || 0)) { list.splice(i, 1); snap.delete(r.id); delete S.sync.dirty[r.id]; return true; }
+    if (G && ru >= G.updated) { delete S.gone[r.id]; delete S.sync.dirty[r.id]; }
+    return false;
+  }
+  if (data.id !== r.id || (isEvent ? !(data.start && data.end) : typeof data.title !== 'string')) return false;
+  if (L ? ru <= (L.updated || 0) : (G && ru <= G.updated)) return false;
+  if (L) list[i] = data; else list.push(data);
+  delete S.gone[r.id]; delete S.sync.dirty[r.id];
+  snap.set(r.id, (isEvent ? 'e' : 't') + strip(data));
+  return true;
+}
+async function sync() {
+  clearTimeout(syncT);
+  if (!A || !SA) return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true; syncUI();
+  let changed = false;
+  try {
+    // 1. pull everything changed since last time (with a few seconds of overlap, in case two devices wrote at once)
+    const since = S.sync.cursor ? new Date(Date.parse(S.sync.cursor) - 10000).toISOString() : '';
+    let cursor = S.sync.cursor;
+    for (let offset = 0; ; offset += 500) {
+      const rows = await api(`/rest/v1/dayline_items?select=id,kind,data,deleted,updated_at&order=updated_at.asc,id.asc&limit=500&offset=${offset}${since ? '&updated_at=gt.' + encodeURIComponent(since) : ''}`);
+      if (!A) return;
+      for (const r of rows) {
+        if (mergeRow(r)) changed = true;
+        if (!cursor || Date.parse(r.updated_at) > Date.parse(cursor)) cursor = r.updated_at;
+      }
+      if (rows.length < 500) break;
+    }
+    // 2. push what changed here
+    const rows = [], sent = {};
+    for (const id of Object.keys(S.sync.dirty)) {
+      const it = findItem(id), g = S.gone[id];
+      if (it) { rows.push({user_id:A.uid, id, kind:S.todos.includes(it) ? 'todo' : 'event', data:it, deleted:false}); sent[id] = it.updated; }
+      else if (g) { rows.push({user_id:A.uid, id, kind:g.kind, data:{updated:g.updated}, deleted:true}); sent[id] = g.updated; }
+      else delete S.sync.dirty[id];
+    }
+    for (let i = 0; i < rows.length; i += 200) {
+      await api('/rest/v1/dayline_items?on_conflict=user_id,id', {method:'POST', body:rows.slice(i, i + 200), headers:{Prefer:'resolution=merge-duplicates,return=minimal'}});
+      if (!A) return;
+    }
+    for (const id in sent) {          // anything edited again while the request was in flight stays queued
+      const it = findItem(id), g = S.gone[id];
+      if ((it ? it.updated : g ? g.updated : sent[id]) === sent[id]) { delete S.sync.dirty[id]; if (!it) delete S.gone[id]; }
+    }
+    S.sync.cursor = cursor;
+    write();
+    lastSync = Date.now(); syncErr = '';
+  } catch (e) {
+    const code = e.data && e.data.code;
+    syncErr = e.status === undefined ? "Offline. Your changes will sync when you're back online."
+      : e.status === 404 || code === 'PGRST205' || code === '42P01' ? "Sync isn't switched on for this server yet."
+      : e.status === 401 ? '' : `Sync didn't finish (error ${e.status}). It will try again.`;
+    if (changed) write();
+  } finally {
+    syncing = false;
+    if (changed) render();
+    syncUI();
+    if (syncAgain) { syncAgain = false; scheduleSync(500); }
+  }
+}
+function scheduleSync(ms) { clearTimeout(syncT); syncT = setTimeout(sync, ms); }
+function syncLine() {
+  if (syncing) return 'Syncing…';
+  if (syncErr) return syncErr;
+  return lastSync ? 'Synced at ' + fmtTime(new Date(lastSync)) : 'Not synced yet';
+}
+function acctHTML() {
+  if (!SA) return '<p class="note">Signing in works in the installed app, not on this preview page.</p>';
+  if (!A) return `<p class="note">Sign in to carry your to-dos and calendar between your phone and computer. No email needed.</p>
+    <div class="acts"><button type="button" class="btn primary" data-act="auth-open">Sign in or create account</button></div>`;
+  return `<p class="note">Signed in as <b>@${esc(A.username)}</b><br>${esc(syncLine())}</p>
+    <div class="acts"><button type="button" class="btn" data-act="sync-now"${syncing ? ' disabled' : ''}>Sync now</button><button type="button" class="btn" data-act="sign-out">Sign out</button></div>`;
+}
+function syncUI() {
+  const box = $('#acct');
+  if (box) box.innerHTML = acctHTML();
+  $('#store-t').textContent = A ? '@' + A.username : 'Saved on this device';
+  $('#store-s').textContent = A ? syncLine() : 'Works offline';
+}
+
 /* ---------- app updates (Android app only; the app itself does the downloading) ---------- */
 const HOST = window.DaylineHost && window.DaylineHost.checkUpdate ? window.DaylineHost : null;
 let upd = {status:'', available:false, busy:false}, updTold = false;
@@ -722,6 +954,7 @@ dlg.addEventListener('submit', e => {
   const f = e.target, kind = f.dataset.kind, id = f.dataset.id, d = new FormData(f);
   if (kind === 'settings') return;
   e.preventDefault();
+  if (kind === 'auth') { doAuth(f); return; }
   const title = String(d.get('title') || '').trim();
   if (!title) return;
   if (kind === 'todo') {
@@ -761,7 +994,7 @@ $('#import-file').addEventListener('change', async e => {
     const data = JSON.parse(await file.text());
     if (!data || !Array.isArray(data.todos)) throw 0;
     const before = S;
-    S = migrate(data); save(); applyLook(); if (dlg.open) dlg.close(); render();
+    S = migrate({...data, sync:before.sync, gone:before.gone}); save(); applyLook(); if (dlg.open) dlg.close(); render();
     toast('Backup imported', 'Undo', () => { S = before; save(); applyLook(); render(); });
   } catch (err) {
     if (dlg.open) dlg.close();
@@ -828,6 +1061,10 @@ document.addEventListener('click', e => {
       break;
     }
     case 'import': $('#import-file').click(); break;
+    case 'auth-open': openAuth('in'); break;
+    case 'auth-mode': openAuth(el.dataset.m, [$('#a-user').value, $('#a-pass').value]); break;
+    case 'sync-now': sync(); break;
+    case 'sign-out': signOut(); break;
     case 'upd-check': HOST.checkUpdate(true); break;
     case 'upd-install': HOST.installUpdate(); break;
     case 'toast-act': { const fn = toastFn; $('#toast').hidden = true; if (fn) fn(); break; }
@@ -849,14 +1086,18 @@ mqDesk.addEventListener('change', render);
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change', applyLook);
 function tick() { if (today() !== lastDay) { lastDay = today(); render(); } else updateNow(); }
 setInterval(tick, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { tick(); autoCheck(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { tick(); autoCheck(); sync(); } });
+setInterval(() => { if (!document.hidden) sync(); }, 60000);
+addEventListener('online', () => sync());
 addEventListener('storage', e => {
   if (e.key !== KEY || !e.newValue) return;
-  try { S = migrate(JSON.parse(e.newValue)); applyLook(); render(); } catch (err) {}
+  try { S = migrate(JSON.parse(e.newValue)); rebuildSnap(); applyLook(); render(); } catch (err) {}
 });
 
 applyLook();
 render();
+syncUI();
 autoCheck();
+if (A) scheduleSync(800);
 })();
 </script>

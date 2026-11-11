@@ -48,6 +48,13 @@ jobs:
           files: |
             dayline.apk
             latest.json
+      # The same page, installable from a browser on Windows and Linux (served by GitHub Pages from the gh-pages branch).
+      - name: Publish the web version
+        run: |
+          cd dist && touch .nojekyll && git init -q -b gh-pages
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com add -A
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Build ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" gh-pages
       - name: Keep the log when a build fails
         if: failure()
         run: |
