@@ -76,3 +76,52 @@ jobs:
           git -c user.name=ci -c user.email=ci@users.noreply.github.com add build.log
           git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Build ${{ github.run_number }} log"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ci-log
+
+  # Windows app: the same pages in a native window (WebView2). Built, started twice as a check, then packed as an
+  # installer and a portable zip and added to the release the job above made.
+  windows:
+    needs: apk
+    if: always()
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the web app
+        run: python build.py
+      - name: Build the Windows app
+        shell: pwsh
+        run: |
+          dotnet build windows/Dayline.csproj -c Release -o app --nologo 2>&1 | Tee-Object windows-build.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Copy-Item dist app\web -Recurse
+          Remove-Item app\Microsoft.Web.WebView2.Wpf.*, app\*.pdb, app\*.xml -ErrorAction SilentlyContinue
+          Get-ChildItem app -Recurse -File | ForEach-Object { "{0,9}  {1}" -f $_.Length, $_.FullName.Substring("$PWD\app\".Length) } | Tee-Object windows-build.log -Append
+      - name: Try it out
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          foreach ($run in 1, 2) {
+            Remove-Item selftest.txt -ErrorAction SilentlyContinue
+            $p = Start-Process app\Dayline.exe -ArgumentList '--self-test', "$PWD\selftest.txt" -PassThru
+            if (-not $p.WaitForExit(120000)) { $p.Kill(); "run ${run}: no answer after two minutes" >> windows-test.txt }
+            elseif (Test-Path selftest.txt) { "run ${run}: $(Get-Content selftest.txt -Raw)" >> windows-test.txt }
+            else { "run ${run}: no result, exit code $($p.ExitCode)" >> windows-test.txt }
+          }
+          Get-Content windows-test.txt
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive app\* dayline-windows.zip
+          choco install innosetup -y --no-progress | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DBuild=$env:GITHUB_RUN_NUMBER" "/DAppDir=$PWD\app" "/DOutDir=$PWD" windows\dayline.iss 2>&1 | Select-Object -Last 8 | Tee-Object windows-build.log -Append
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dayline-setup.exe, dayline-windows.zip | ForEach-Object { "{0,9}  {1}" -f $_.Length, $_.Name } | Tee-Object windows-build.log -Append
+      - uses: softprops/action-gh-release@v2
+        if: always()
+        with:
+          tag_name: build-${{ github.run_number }}
+          files: |
+            dayline-setup.exe
+            dayline-windows.zip
+            windows-test.txt
+            windows-build.log
+

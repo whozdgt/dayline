@@ -23,7 +23,7 @@ page = f"""<!doctype html>
 </head>
 <body>
 {body.strip()}
-<script>if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{{}}))</script>
+<script>if('serviceWorker' in navigator&&!window.DaylineHost)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{{}}))</script>
 </body>
 </html>
 """
